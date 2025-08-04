@@ -1,0 +1,58 @@
+# AWS SSH Keys
+ansible/keys/*.pem
+ansible/keys/*.key
+
+# Ansible temporary files
+*.retry
+.ansible/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Docker volumes and data
+monitoring/data/
+monitoring/volumes/
+
+# Grafana data
+monitoring/grafana/data/
+
+# Prometheus data
+monitoring/prometheus/data/
+
+# Loki data
+monitoring/loki/data/
+
+# Log files
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Backup files
+*.bak
+*.backup
+
+# Ansible vault files (if using encryption)
+vault_pass.txt
+
+# Host-specific inventory files (if you create them)
+ansible/inventory_*.ini
+
+# SSL certificates
+*.crt
+*.cert
+*.key
+*.pem
