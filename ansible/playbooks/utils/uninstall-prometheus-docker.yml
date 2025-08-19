@@ -1,0 +1,189 @@
+---
+- name: Complete Prometheus Docker Uninstallation
+  hosts: all_servers
+  become: yes
+  gather_facts: yes
+  vars:
+    monitoring_dir: "/opt/monitoring"
+    
+  tasks:
+    - name: Skip if prometheus not requested for uninstall
+      meta: end_host
+      when: not (uninstall_prometheus | default(true) | bool)
+      
+    - name: Display uninstall warning
+      debug:
+        msg: |
+          ⚠️  WARNING: COMPLETE PROMETHEUS DOCKER REMOVAL
+          =============================================
+          This will permanently remove:
+          - Prometheus container and image
+          - All configuration files
+          - All metrics data and volumes
+          - Docker compose files
+          - Monitoring directory (if empty)
+          
+          Server: {{ inventory_hostname }}
+          Monitoring Dir: {{ monitoring_dir }}
+          
+    - name: Stop and remove Prometheus container
+      raw: |
+        echo "Stopping Prometheus container..."
+        docker stop prometheus 2>/dev/null || echo "Prometheus container not running"
+        docker rm prometheus 2>/dev/null || echo "Prometheus container not found"
+      become_user: "{{ ansible_user }}"
+      ignore_errors: yes
+      
+    - name: Stop Prometheus via Docker Compose
+      raw: |
+        cd {{ monitoring_dir }}
+        if [ -f docker-compose-prometheus.yml ]; then
+          echo "Stopping Prometheus via Docker Compose..."
+          docker compose -f docker-compose-prometheus.yml down -v 2>/dev/null || true
+        else
+          echo "No Docker Compose file found for Prometheus"
+        fi
+      become_user: "{{ ansible_user }}"
+      ignore_errors: yes
+      
+    - name: Remove Prometheus Docker images
+      raw: |
+        echo "Removing Prometheus Docker images..."
+        docker images | grep prom/prometheus | awk '{print $3}' | xargs -r docker rmi -f 2>/dev/null || echo "No Prometheus images to remove"
+      become_user: "{{ ansible_user }}"
+      ignore_errors: yes
+      
+    - name: Remove Prometheus Docker volumes
+      raw: |
+        echo "Removing Prometheus Docker volumes..."
+        docker volume ls | grep prometheus | awk '{print $2}' | xargs -r docker volume rm 2>/dev/null || echo "No Prometheus volumes to remove"
+        docker volume ls | grep monitoring.*prometheus | awk '{print $2}' | xargs -r docker volume rm 2>/dev/null || true
+      become_user: "{{ ansible_user }}"
+      ignore_errors: yes
+      
+    - name: Remove Prometheus configuration files
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ monitoring_dir }}/prometheus"
+        - "{{ monitoring_dir }}/docker-compose-prometheus.yml"
+        - "{{ monitoring_dir }}/prometheus.yml"
+        
+    - name: Remove Prometheus data directories
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ monitoring_dir }}/prometheus-data"
+        - "{{ monitoring_dir }}/data/prometheus"
+        - "/var/lib/docker/volumes/prometheus_data"
+        - "/var/lib/docker/volumes/monitoring_prometheus_data"
+        
+    - name: Clean up Docker system
+      raw: |
+        echo "Cleaning up Docker system..."
+        docker system prune -f --volumes 2>/dev/null || echo "Docker system prune completed"
+      become_user: "{{ ansible_user }}"
+      ignore_errors: yes
+      
+    - name: Remove monitoring directory if empty
+      raw: |
+        if [ -d "{{ monitoring_dir }}" ]; then
+          # Only remove if directory is empty or only contains prometheus files
+          if [ -z "$(ls -A {{ monitoring_dir }} 2>/dev/null)" ]; then
+            echo "Removing empty monitoring directory..."
+            rmdir {{ monitoring_dir }} 2>/dev/null || echo "Could not remove monitoring directory"
+          else
+            echo "Monitoring directory not empty, keeping it..."
+            ls -la {{ monitoring_dir }}
+          fi
+        else
+          echo "Monitoring directory does not exist"
+        fi
+      ignore_errors: yes
+      
+    - name: Verify Prometheus removal
+      raw: |
+        echo "=== PROMETHEUS DOCKER REMOVAL VERIFICATION ==="
+        echo "Server: $(hostname)"
+        echo ""
+        
+        echo "❌ Checking for Prometheus containers:"
+        if docker ps -a | grep -q prometheus; then
+          echo "⚠️  Found remaining Prometheus containers:"
+          docker ps -a | grep prometheus
+        else
+          echo "✅ No Prometheus containers found"
+        fi
+        echo ""
+        
+        echo "❌ Checking for Prometheus images:"
+        if docker images | grep -q prom/prometheus; then
+          echo "⚠️  Found remaining Prometheus images:"
+          docker images | grep prom/prometheus
+        else
+          echo "✅ No Prometheus images found"
+        fi
+        echo ""
+        
+        echo "❌ Checking for Prometheus volumes:"
+        if docker volume ls | grep -q prometheus; then
+          echo "⚠️  Found remaining Prometheus volumes:"
+          docker volume ls | grep prometheus
+        else
+          echo "✅ No Prometheus volumes found"
+        fi
+        echo ""
+        
+        echo "❌ Checking for configuration files:"
+        for file in {{ monitoring_dir }}/prometheus {{ monitoring_dir }}/docker-compose-prometheus.yml; do
+          if [ -e "$file" ]; then
+            echo "⚠️  File still exists: $file"
+          else
+            echo "✅ $file removed"
+          fi
+        done
+        echo ""
+        
+        echo "❌ Checking for data directories:"
+        for dir in {{ monitoring_dir }}/prometheus-data {{ monitoring_dir }}/data/prometheus; do
+          if [ -d "$dir" ]; then
+            echo "⚠️  Directory still exists: $dir"
+          else
+            echo "✅ $dir removed"
+          fi
+        done
+        echo ""
+        
+        echo "❌ Checking monitoring directory:"
+        if [ -d "{{ monitoring_dir }}" ]; then
+          echo "📁 Monitoring directory contents:"
+          ls -la {{ monitoring_dir }} 2>/dev/null || echo "Directory empty or inaccessible"
+        else
+          echo "✅ Monitoring directory removed"
+        fi
+        echo "=============================================="
+      register: verification_result
+      become_user: "{{ ansible_user }}"
+      
+    - name: Display verification results
+      debug:
+        var: verification_result.stdout_lines
+        
+    - name: Display final status
+      debug:
+        msg: |
+          🗑️  PROMETHEUS DOCKER UNINSTALLATION COMPLETE
+          ==========================================
+          ✅ Prometheus container stopped and removed
+          ✅ Prometheus Docker images removed
+          ✅ Prometheus volumes and data removed
+          ✅ Configuration files cleaned
+          ✅ Docker Compose files removed
+          ✅ Docker system cleaned
+          
+          ⚠️  Please check verification output above for any remaining items
+          💡 Other services in monitoring directory preserved
+          
+          Server: {{ inventory_hostname }} - Prometheus Docker removal completed

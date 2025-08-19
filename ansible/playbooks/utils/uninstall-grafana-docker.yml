@@ -1,0 +1,190 @@
+---
+- name: Complete Grafana Docker Uninstallation
+  hosts: all_servers
+  become: yes
+  gather_facts: yes
+  vars:
+    monitoring_dir: "/opt/monitoring"
+    
+  tasks:
+    - name: Skip if grafana not requested for uninstall
+      meta: end_host
+      when: not (uninstall_grafana | default(true) | bool)
+      
+    - name: Display uninstall warning
+      debug:
+        msg: |
+          ⚠️  WARNING: COMPLETE GRAFANA DOCKER REMOVAL
+          ============================================
+          This will permanently remove:
+          - Grafana container and image
+          - All dashboards and configuration
+          - All data sources and panels
+          - All user accounts and settings
+          - Docker compose files
+          - Monitoring directory (if empty)
+          
+          Server: {{ inventory_hostname }}
+          Monitoring Dir: {{ monitoring_dir }}
+          
+    - name: Stop and remove Grafana container
+      raw: |
+        echo "Stopping Grafana container..."
+        docker stop grafana 2>/dev/null || echo "Grafana container not running"
+        docker rm grafana 2>/dev/null || echo "Grafana container not found"
+      become_user: "{{ ansible_user }}"
+      ignore_errors: yes
+      
+    - name: Stop Grafana via Docker Compose
+      raw: |
+        cd {{ monitoring_dir }}
+        if [ -f docker-compose-grafana.yml ]; then
+          echo "Stopping Grafana via Docker Compose..."
+          docker compose -f docker-compose-grafana.yml down -v 2>/dev/null || true
+        else
+          echo "No Docker Compose file found for Grafana"
+        fi
+      become_user: "{{ ansible_user }}"
+      ignore_errors: yes
+      
+    - name: Remove Grafana Docker images
+      raw: |
+        echo "Removing Grafana Docker images..."
+        docker images | grep grafana/grafana | awk '{print $3}' | xargs -r docker rmi -f 2>/dev/null || echo "No Grafana images to remove"
+      become_user: "{{ ansible_user }}"
+      ignore_errors: yes
+      
+    - name: Remove Grafana Docker volumes
+      raw: |
+        echo "Removing Grafana Docker volumes..."
+        docker volume ls | grep grafana | awk '{print $2}' | xargs -r docker volume rm 2>/dev/null || echo "No Grafana volumes to remove"
+        docker volume ls | grep monitoring.*grafana | awk '{print $2}' | xargs -r docker volume rm 2>/dev/null || true
+      become_user: "{{ ansible_user }}"
+      ignore_errors: yes
+      
+    - name: Remove Grafana configuration files
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ monitoring_dir }}/grafana"
+        - "{{ monitoring_dir }}/docker-compose-grafana.yml"
+        - "{{ monitoring_dir }}/grafana.ini"
+        
+    - name: Remove Grafana data directories
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ monitoring_dir }}/grafana-data"
+        - "{{ monitoring_dir }}/data/grafana"
+        - "/var/lib/docker/volumes/grafana_data"
+        - "/var/lib/docker/volumes/monitoring_grafana_data"
+        
+    - name: Clean up Docker system
+      raw: |
+        echo "Cleaning up Docker system..."
+        docker system prune -f --volumes 2>/dev/null || echo "Docker system prune completed"
+      become_user: "{{ ansible_user }}"
+      ignore_errors: yes
+      
+    - name: Remove monitoring directory if empty
+      raw: |
+        if [ -d "{{ monitoring_dir }}" ]; then
+          # Only remove if directory is empty or only contains grafana files
+          if [ -z "$(ls -A {{ monitoring_dir }} 2>/dev/null)" ]; then
+            echo "Removing empty monitoring directory..."
+            rmdir {{ monitoring_dir }} 2>/dev/null || echo "Could not remove monitoring directory"
+          else
+            echo "Monitoring directory not empty, keeping it..."
+            ls -la {{ monitoring_dir }}
+          fi
+        else
+          echo "Monitoring directory does not exist"
+        fi
+      ignore_errors: yes
+      
+    - name: Verify Grafana removal
+      raw: |
+        echo "=== GRAFANA DOCKER REMOVAL VERIFICATION ==="
+        echo "Server: $(hostname)"
+        echo ""
+        
+        echo "❌ Checking for Grafana containers:"
+        if docker ps -a | grep -q grafana; then
+          echo "⚠️  Found remaining Grafana containers:"
+          docker ps -a | grep grafana
+        else
+          echo "✅ No Grafana containers found"
+        fi
+        echo ""
+        
+        echo "❌ Checking for Grafana images:"
+        if docker images | grep -q grafana/grafana; then
+          echo "⚠️  Found remaining Grafana images:"
+          docker images | grep grafana/grafana
+        else
+          echo "✅ No Grafana images found"
+        fi
+        echo ""
+        
+        echo "❌ Checking for Grafana volumes:"
+        if docker volume ls | grep -q grafana; then
+          echo "⚠️  Found remaining Grafana volumes:"
+          docker volume ls | grep grafana
+        else
+          echo "✅ No Grafana volumes found"
+        fi
+        echo ""
+        
+        echo "❌ Checking for configuration files:"
+        for file in {{ monitoring_dir }}/grafana {{ monitoring_dir }}/docker-compose-grafana.yml; do
+          if [ -e "$file" ]; then
+            echo "⚠️  File still exists: $file"
+          else
+            echo "✅ $file removed"
+          fi
+        done
+        echo ""
+        
+        echo "❌ Checking for data directories:"
+        for dir in {{ monitoring_dir }}/grafana-data {{ monitoring_dir }}/data/grafana; do
+          if [ -d "$dir" ]; then
+            echo "⚠️  Directory still exists: $dir"
+          else
+            echo "✅ $dir removed"
+          fi
+        done
+        echo ""
+        
+        echo "❌ Checking monitoring directory:"
+        if [ -d "{{ monitoring_dir }}" ]; then
+          echo "📁 Monitoring directory contents:"
+          ls -la {{ monitoring_dir }} 2>/dev/null || echo "Directory empty or inaccessible"
+        else
+          echo "✅ Monitoring directory removed"
+        fi
+        echo "=========================================="
+      register: verification_result
+      become_user: "{{ ansible_user }}"
+      
+    - name: Display verification results
+      debug:
+        var: verification_result.stdout_lines
+        
+    - name: Display final status
+      debug:
+        msg: |
+          🗑️  GRAFANA DOCKER UNINSTALLATION COMPLETE
+          ==========================================
+          ✅ Grafana container stopped and removed
+          ✅ Grafana Docker images removed
+          ✅ Grafana volumes and data removed
+          ✅ Configuration files cleaned
+          ✅ Docker Compose files removed
+          ✅ Docker system cleaned
+          
+          ⚠️  Please check verification output above for any remaining items
+          💡 Other services in monitoring directory preserved
+          
+          Server: {{ inventory_hostname }} - Grafana Docker removal completed

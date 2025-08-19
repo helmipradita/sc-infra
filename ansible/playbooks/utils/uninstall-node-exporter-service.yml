@@ -1,10 +1,25 @@
 ---
-- name: Uninstall Node Exporter Service
+- name: Complete Node Exporter Service Uninstallation
   hosts: all_servers
   become: yes
   gather_facts: yes
   
   tasks:
+    - name: Display uninstall warning
+      debug:
+        msg: |
+          ⚠️  WARNING: COMPLETE NODE EXPORTER SERVICE REMOVAL
+          ===================================================
+          This will permanently remove:
+          - Node Exporter service and binaries
+          - All configuration files
+          - System metrics collection
+          - User accounts and directories
+          - Systemd service files
+          
+          Server: {{ inventory_hostname }}
+          OS: {{ ansible_distribution }}
+          
     - name: Stop Node Exporter service (Amazon Linux)
       systemd:
         name: node_exporter
@@ -27,18 +42,35 @@
         state: absent
       when: ansible_distribution == "Amazon"
       
-    - name: Remove Node Exporter binary (Amazon Linux)
+    - name: Remove Node Exporter binary
       file:
-        path: /usr/local/bin/node_exporter
+        path: "{{ item }}"
         state: absent
-      when: ansible_distribution == "Amazon"
-      
+      loop:
+        - /usr/local/bin/node_exporter
+        - /opt/node_exporter
+        - /usr/bin/node_exporter
+        
     - name: Remove Node Exporter package (Ubuntu)
       apt:
-        name: prometheus-node-exporter
+        name: "{{ item }}"
         state: absent
         purge: yes
+      loop:
+        - prometheus-node-exporter
+        - node-exporter
       when: ansible_distribution == "Ubuntu"
+      ignore_errors: yes
+      
+    - name: Remove Node Exporter package (Amazon Linux)
+      yum:
+        name: "{{ item }}"
+        state: absent
+      loop:
+        - node_exporter
+        - prometheus-node-exporter
+      when: ansible_distribution == "Amazon"
+      ignore_errors: yes
       
     - name: Remove node_exporter user
       user:
@@ -54,11 +86,120 @@
       loop:
         - /etc/node_exporter
         - /var/lib/node_exporter
+        - /var/log/node_exporter
+        - /home/node_exporter
+        - /opt/node_exporter
+        - /usr/share/node_exporter
         
-    - name: Reload systemd daemon
+    - name: Remove Node Exporter configuration from apt sources (Ubuntu)
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/apt/sources.list.d/node_exporter.list
+        - /etc/apt/trusted.gpg.d/node_exporter.gpg
+      when: ansible_distribution == "Ubuntu"
+      
+    - name: Clean up systemd
       systemd:
         daemon_reload: yes
         
-    - name: Display uninstall status
+    - name: Remove any remaining Node Exporter processes
+      raw: |
+        # Kill any remaining node_exporter processes
+        pkill -f node_exporter || true
+        
+        # Remove any node_exporter from PATH
+        which node_exporter && echo "Warning: node_exporter still in PATH" || echo "node_exporter removed from PATH"
+        
+    - name: Clean up package cache (Ubuntu)
+      apt:
+        autoremove: yes
+        autoclean: yes
+      when: ansible_distribution == "Ubuntu"
+      
+    - name: Clean up package cache (Amazon Linux)
+      yum:
+        autoremove: yes
+      when: ansible_distribution == "Amazon"
+      
+    - name: Verify Node Exporter removal
+      raw: |
+        echo "=== NODE EXPORTER REMOVAL VERIFICATION ==="
+        echo "Server: $(hostname)"
+        echo ""
+        
+        echo "❌ Checking for remaining processes:"
+        if pgrep -f node_exporter > /dev/null; then
+          echo "⚠️  Found remaining node_exporter processes:"
+          pgrep -f node_exporter
+        else
+          echo "✅ No node_exporter processes found"
+        fi
+        echo ""
+        
+        echo "❌ Checking for remaining binaries:"
+        if which node_exporter > /dev/null 2>&1; then
+          echo "⚠️  Found: $(which node_exporter)"
+        else
+          echo "✅ node_exporter not found in PATH"
+        fi
+        echo ""
+        
+        echo "❌ Checking for remaining directories:"
+        for dir in /etc/node_exporter /var/lib/node_exporter /opt/node_exporter; do
+          if [ -d "$dir" ]; then
+            echo "⚠️  Directory still exists: $dir"
+          else
+            echo "✅ $dir removed"
+          fi
+        done
+        echo ""
+        
+        echo "❌ Checking for node_exporter user:"
+        if id node_exporter > /dev/null 2>&1; then
+          echo "⚠️  User 'node_exporter' still exists"
+        else
+          echo "✅ User 'node_exporter' removed"
+        fi
+        echo ""
+        
+        echo "❌ Checking systemd service:"
+        if systemctl list-unit-files | grep -q node_exporter; then
+          echo "⚠️  Systemd service files still exist:"
+          systemctl list-unit-files | grep node_exporter
+        else
+          echo "✅ No node_exporter systemd services found"
+        fi
+        echo ""
+        
+        echo "❌ Checking if port 9100 is accessible:"
+        if curl -s http://localhost:9100/metrics >/dev/null 2>&1; then
+          echo "⚠️  Node Exporter metrics still accessible on port 9100"
+        else
+          echo "✅ Node Exporter metrics endpoint not accessible"
+        fi
+        echo "=========================================="
+      register: verification_result
+      
+    - name: Display verification results
       debug:
-        msg: "✅ Node Exporter service uninstalled from {{ inventory_hostname }}"
+        var: verification_result.stdout_lines
+        
+    - name: Display final status
+      debug:
+        msg: |
+          🗑️  NODE EXPORTER SERVICE UNINSTALLATION COMPLETE
+          =================================================
+          ✅ Node Exporter service stopped and disabled
+          ✅ Binaries and tools removed
+          ✅ User account removed
+          ✅ Configuration directories cleaned
+          ✅ Data directories removed
+          ✅ Systemd services cleaned
+          ✅ Package cache cleaned
+          
+          ⚠️  Please check verification output above for any remaining items
+          ⚠️  Reboot recommended to ensure complete cleanup
+          
+          Server: {{ inventory_hostname }} - Node Exporter removal completed

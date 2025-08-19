@@ -1,0 +1,196 @@
+---
+- name: Complete Node Exporter Docker Uninstallation
+  hosts: all_servers
+  become: yes
+  gather_facts: yes
+  vars:
+    monitoring_dir: "/opt/monitoring"
+    
+  tasks:
+    - name: Skip if node_exporter not requested for uninstall
+      meta: end_host
+      when: not (uninstall_node_exporter | default(true) | bool)
+      
+    - name: Display uninstall warning
+      debug:
+        msg: |
+          ⚠️  WARNING: COMPLETE NODE EXPORTER DOCKER REMOVAL
+          ==================================================
+          This will permanently remove:
+          - Node Exporter container and image
+          - All configuration files
+          - System metrics collection
+          - Docker compose files
+          - Monitoring directory (if empty)
+          
+          Server: {{ inventory_hostname }}
+          Monitoring Dir: {{ monitoring_dir }}
+          
+    - name: Stop and remove Node Exporter container
+      raw: |
+        echo "Stopping Node Exporter container..."
+        docker stop node-exporter 2>/dev/null || echo "Node Exporter container not running"
+        docker rm node-exporter 2>/dev/null || echo "Node Exporter container not found"
+      become_user: "{{ ansible_user }}"
+      ignore_errors: yes
+      
+    - name: Stop Node Exporter via Docker Compose
+      raw: |
+        cd {{ monitoring_dir }}
+        if [ -f docker-compose-node-exporter.yml ]; then
+          echo "Stopping Node Exporter via Docker Compose..."
+          docker compose -f docker-compose-node-exporter.yml down -v 2>/dev/null || true
+        else
+          echo "No Docker Compose file found for Node Exporter"
+        fi
+      become_user: "{{ ansible_user }}"
+      ignore_errors: yes
+      
+    - name: Remove Node Exporter Docker images
+      raw: |
+        echo "Removing Node Exporter Docker images..."
+        docker images | grep prom/node-exporter | awk '{print $3}' | xargs -r docker rmi -f 2>/dev/null || echo "No Node Exporter images to remove"
+      become_user: "{{ ansible_user }}"
+      ignore_errors: yes
+      
+    - name: Remove Node Exporter Docker volumes
+      raw: |
+        echo "Removing Node Exporter Docker volumes..."
+        docker volume ls | grep node-exporter | awk '{print $2}' | xargs -r docker volume rm 2>/dev/null || echo "No Node Exporter volumes to remove"
+        docker volume ls | grep monitoring.*node-exporter | awk '{print $2}' | xargs -r docker volume rm 2>/dev/null || true
+      become_user: "{{ ansible_user }}"
+      ignore_errors: yes
+      
+    - name: Remove Node Exporter configuration files
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ monitoring_dir }}/node-exporter"
+        - "{{ monitoring_dir }}/docker-compose-node-exporter.yml"
+        - "{{ monitoring_dir }}/node-exporter.yml"
+        
+    - name: Remove Node Exporter data directories
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ monitoring_dir }}/node-exporter-data"
+        - "{{ monitoring_dir }}/data/node-exporter"
+        - "/var/lib/docker/volumes/node_exporter_data"
+        - "/var/lib/docker/volumes/monitoring_node_exporter_data"
+        
+    - name: Clean up Docker system
+      raw: |
+        echo "Cleaning up Docker system..."
+        docker system prune -f --volumes 2>/dev/null || echo "Docker system prune completed"
+      become_user: "{{ ansible_user }}"
+      ignore_errors: yes
+      
+    - name: Remove monitoring directory if empty
+      raw: |
+        if [ -d "{{ monitoring_dir }}" ]; then
+          # Only remove if directory is empty or only contains node-exporter files
+          if [ -z "$(ls -A {{ monitoring_dir }} 2>/dev/null)" ]; then
+            echo "Removing empty monitoring directory..."
+            rmdir {{ monitoring_dir }} 2>/dev/null || echo "Could not remove monitoring directory"
+          else
+            echo "Monitoring directory not empty, keeping it..."
+            ls -la {{ monitoring_dir }}
+          fi
+        else
+          echo "Monitoring directory does not exist"
+        fi
+      ignore_errors: yes
+      
+    - name: Verify Node Exporter removal
+      raw: |
+        echo "=== NODE EXPORTER DOCKER REMOVAL VERIFICATION ==="
+        echo "Server: $(hostname)"
+        echo ""
+        
+        echo "❌ Checking for Node Exporter containers:"
+        if docker ps -a | grep -q node-exporter; then
+          echo "⚠️  Found remaining Node Exporter containers:"
+          docker ps -a | grep node-exporter
+        else
+          echo "✅ No Node Exporter containers found"
+        fi
+        echo ""
+        
+        echo "❌ Checking for Node Exporter images:"
+        if docker images | grep -q prom/node-exporter; then
+          echo "⚠️  Found remaining Node Exporter images:"
+          docker images | grep prom/node-exporter
+        else
+          echo "✅ No Node Exporter images found"
+        fi
+        echo ""
+        
+        echo "❌ Checking for Node Exporter volumes:"
+        if docker volume ls | grep -q node-exporter; then
+          echo "⚠️  Found remaining Node Exporter volumes:"
+          docker volume ls | grep node-exporter
+        else
+          echo "✅ No Node Exporter volumes found"
+        fi
+        echo ""
+        
+        echo "❌ Checking for configuration files:"
+        for file in {{ monitoring_dir }}/node-exporter {{ monitoring_dir }}/docker-compose-node-exporter.yml; do
+          if [ -e "$file" ]; then
+            echo "⚠️  File still exists: $file"
+          else
+            echo "✅ $file removed"
+          fi
+        done
+        echo ""
+        
+        echo "❌ Checking for data directories:"
+        for dir in {{ monitoring_dir }}/node-exporter-data {{ monitoring_dir }}/data/node-exporter; do
+          if [ -d "$dir" ]; then
+            echo "⚠️  Directory still exists: $dir"
+          else
+            echo "✅ $dir removed"
+          fi
+        done
+        echo ""
+        
+        echo "❌ Checking monitoring directory:"
+        if [ -d "{{ monitoring_dir }}" ]; then
+          echo "📁 Monitoring directory contents:"
+          ls -la {{ monitoring_dir }} 2>/dev/null || echo "Directory empty or inaccessible"
+        else
+          echo "✅ Monitoring directory removed"
+        fi
+        
+        echo "❌ Checking if metrics endpoint is accessible:"
+        if curl -s http://localhost:9100/metrics >/dev/null 2>&1; then
+          echo "⚠️  Node Exporter metrics still accessible on port 9100"
+        else
+          echo "✅ Node Exporter metrics endpoint not accessible"
+        fi
+        echo "=================================================="
+      register: verification_result
+      become_user: "{{ ansible_user }}"
+      
+    - name: Display verification results
+      debug:
+        var: verification_result.stdout_lines
+        
+    - name: Display final status
+      debug:
+        msg: |
+          🗑️  NODE EXPORTER DOCKER UNINSTALLATION COMPLETE
+          =================================================
+          ✅ Node Exporter container stopped and removed
+          ✅ Node Exporter Docker images removed
+          ✅ Node Exporter volumes and data removed
+          ✅ Configuration files cleaned
+          ✅ Docker Compose files removed
+          ✅ Docker system cleaned
+          
+          ⚠️  Please check verification output above for any remaining items
+          💡 Other services in monitoring directory preserved
+          
+          Server: {{ inventory_hostname }} - Node Exporter Docker removal completed

@@ -1,0 +1,194 @@
+---
+- name: Complete Prometheus Service Uninstallation
+  hosts: all_servers
+  become: yes
+  gather_facts: yes
+  
+  tasks:
+    - name: Display uninstall warning
+      debug:
+        msg: |
+          ⚠️  WARNING: COMPLETE PROMETHEUS SERVICE REMOVAL
+          ============================================
+          This will permanently remove:
+          - Prometheus service and binaries
+          - All configuration files
+          - All data and metrics
+          - User accounts and directories
+          - Systemd service files
+          
+          Server: {{ inventory_hostname }}
+          OS: {{ ansible_distribution }}
+          
+    - name: Stop Prometheus service
+      systemd:
+        name: prometheus
+        state: stopped
+        enabled: no
+      ignore_errors: yes
+      
+    - name: Remove systemd service file
+      file:
+        path: /etc/systemd/system/prometheus.service
+        state: absent
+        
+    - name: Remove Prometheus binary
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /usr/local/bin/prometheus
+        - /usr/local/bin/promtool
+        - /opt/prometheus
+        - /usr/bin/prometheus
+        - /usr/bin/promtool
+        
+    - name: Remove Prometheus user
+      user:
+        name: prometheus
+        state: absent
+        remove: yes
+      ignore_errors: yes
+      
+    - name: Remove Prometheus directories
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/prometheus
+        - /var/lib/prometheus
+        - /var/log/prometheus
+        - /home/prometheus
+        - /opt/prometheus
+        - /usr/share/prometheus
+        
+    - name: Remove Prometheus package (Ubuntu)
+      apt:
+        name: "{{ item }}"
+        state: absent
+        purge: yes
+      loop:
+        - prometheus
+        - prometheus-node-exporter
+        - prometheus-pushgateway
+        - prometheus-alertmanager
+      when: ansible_distribution == "Ubuntu"
+      ignore_errors: yes
+      
+    - name: Remove Prometheus package (Amazon Linux)
+      yum:
+        name: "{{ item }}"
+        state: absent
+      loop:
+        - prometheus
+        - prometheus2
+      when: ansible_distribution == "Amazon"
+      ignore_errors: yes
+      
+    - name: Remove Prometheus configuration from apt sources (Ubuntu)
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/apt/sources.list.d/prometheus.list
+        - /etc/apt/trusted.gpg.d/prometheus.gpg
+      when: ansible_distribution == "Ubuntu"
+      
+    - name: Clean up systemd
+      systemd:
+        daemon_reload: yes
+        
+    - name: Remove any remaining Prometheus processes
+      raw: |
+        # Kill any remaining prometheus processes
+        pkill -f prometheus || true
+        pkill -f promtool || true
+        
+        # Remove any prometheus from PATH
+        which prometheus && echo "Warning: prometheus still in PATH" || echo "prometheus removed from PATH"
+        
+    - name: Clean up package cache (Ubuntu)
+      apt:
+        autoremove: yes
+        autoclean: yes
+      when: ansible_distribution == "Ubuntu"
+      
+    - name: Clean up package cache (Amazon Linux)
+      yum:
+        autoremove: yes
+      when: ansible_distribution == "Amazon"
+      
+    - name: Verify Prometheus removal
+      raw: |
+        echo "=== PROMETHEUS REMOVAL VERIFICATION ==="
+        echo "Server: $(hostname)"
+        echo ""
+        
+        echo "❌ Checking for remaining processes:"
+        if pgrep -f prometheus > /dev/null; then
+          echo "⚠️  Found remaining prometheus processes:"
+          pgrep -f prometheus
+        else
+          echo "✅ No prometheus processes found"
+        fi
+        echo ""
+        
+        echo "❌ Checking for remaining binaries:"
+        for binary in prometheus promtool; do
+          if which $binary > /dev/null 2>&1; then
+            echo "⚠️  Found: $(which $binary)"
+          else
+            echo "✅ $binary not found in PATH"
+          fi
+        done
+        echo ""
+        
+        echo "❌ Checking for remaining directories:"
+        for dir in /etc/prometheus /var/lib/prometheus /opt/prometheus; do
+          if [ -d "$dir" ]; then
+            echo "⚠️  Directory still exists: $dir"
+          else
+            echo "✅ $dir removed"
+          fi
+        done
+        echo ""
+        
+        echo "❌ Checking for prometheus user:"
+        if id prometheus > /dev/null 2>&1; then
+          echo "⚠️  User 'prometheus' still exists"
+        else
+          echo "✅ User 'prometheus' removed"
+        fi
+        echo ""
+        
+        echo "❌ Checking systemd service:"
+        if systemctl list-unit-files | grep -q prometheus; then
+          echo "⚠️  Systemd service files still exist:"
+          systemctl list-unit-files | grep prometheus
+        else
+          echo "✅ No prometheus systemd services found"
+        fi
+        echo "======================================"
+      register: verification_result
+      
+    - name: Display verification results
+      debug:
+        var: verification_result.stdout_lines
+        
+    - name: Display final status
+      debug:
+        msg: |
+          🗑️  PROMETHEUS SERVICE UNINSTALLATION COMPLETE
+          ===============================================
+          ✅ Prometheus service stopped and disabled
+          ✅ Binaries and tools removed
+          ✅ User account removed
+          ✅ Configuration directories cleaned
+          ✅ Data directories removed
+          ✅ Systemd services cleaned
+          ✅ Package cache cleaned
+          
+          ⚠️  Please check verification output above for any remaining items
+          ⚠️  Reboot recommended to ensure complete cleanup
+          
+          Server: {{ inventory_hostname }} - Prometheus removal completed
