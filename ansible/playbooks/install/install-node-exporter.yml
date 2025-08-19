@@ -4,100 +4,87 @@
   become: yes
   gather_facts: yes
   vars:
-    node_exporter_version: "1.7.0"
-    node_exporter_user: "node_exporter"
-    node_exporter_port: 9100
+    monitoring_dir: "/opt/monitoring"
     
   tasks:
     - name: Skip if node_exporter not requested
       meta: end_host
       when: not (install_node_exporter | default(false) | bool)
       
-    - name: Create node_exporter user
-      user:
-        name: "{{ node_exporter_user }}"
-        system: yes
-        shell: /bin/false
-        home: /var/lib/node_exporter
-        createhome: no
-        
-    - name: Create node_exporter directories
+    - name: Create monitoring directory
       file:
-        path: "{{ item }}"
+        path: "{{ monitoring_dir }}"
         state: directory
-        owner: "{{ node_exporter_user }}"
-        group: "{{ node_exporter_user }}"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
         mode: '0755'
-      loop:
-        - /etc/node_exporter
-        - /var/lib/node_exporter
         
-    - name: Download and install Node Exporter (Amazon Linux)
+    - name: Stop existing node-exporter container
       raw: |
-        cd /tmp
-        curl -LO https://github.com/prometheus/node_exporter/releases/download/v{{ node_exporter_version }}/node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz
-        tar -xvf node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz
-        sudo cp node_exporter-{{ node_exporter_version }}.linux-amd64/node_exporter /usr/local/bin/
-        sudo chown {{ node_exporter_user }}:{{ node_exporter_user }} /usr/local/bin/node_exporter
-        sudo chmod +x /usr/local/bin/node_exporter
-        rm -rf node_exporter-{{ node_exporter_version }}.linux-amd64*
-      when: ansible_distribution == "Amazon"
+        docker stop node-exporter || true
+        docker rm node-exporter || true
+      become_user: "{{ ansible_user }}"
+      ignore_errors: yes
       
-    - name: Install Node Exporter via package manager (Ubuntu)
-      apt:
-        name: prometheus-node-exporter
-        state: present
-      when: ansible_distribution == "Ubuntu"
-      
-    - name: Create systemd service file for Node Exporter (Amazon Linux)
+    - name: Create Node Exporter Docker Compose file
       copy:
         content: |
-          [Unit]
-          Description=Node Exporter
-          Wants=network-online.target
-          After=network-online.target
-
-          [Service]
-          User={{ node_exporter_user }}
-          Group={{ node_exporter_user }}
-          Type=simple
-          ExecStart=/usr/local/bin/node_exporter \
-            --web.listen-address=:{{ node_exporter_port }} \
-            --path.procfs=/proc \
-            --path.sysfs=/sys \
-            --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)
-
-          [Install]
-          WantedBy=multi-user.target
-        dest: /etc/systemd/system/node_exporter.service
-        owner: root
-        group: root
+          version: '3.8'
+          
+          services:
+            node-exporter:
+              image: prom/node-exporter:v1.8.2
+              container_name: node-exporter
+              network_mode: host
+              pid: host
+              volumes:
+                - /proc:/host/proc:ro
+                - /sys:/host/sys:ro
+                - /:/rootfs:ro
+              command:
+                - '--path.procfs=/host/proc'
+                - '--path.sysfs=/host/sys'
+                - '--path.rootfs=/rootfs'
+                - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+                - '--web.listen-address=0.0.0.0:9100'
+              restart: unless-stopped
+        dest: "{{ monitoring_dir }}/docker-compose-node-exporter.yml"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
         mode: '0644'
-      when: ansible_distribution == "Amazon"
-      
-    - name: Start and enable Node Exporter (Amazon Linux)
-      systemd:
-        daemon_reload: yes
-        name: node_exporter
-        state: started
-        enabled: yes
-      when: ansible_distribution == "Amazon"
-      
-    - name: Start and enable Node Exporter (Ubuntu)
-      systemd:
-        daemon_reload: yes
-        name: prometheus-node-exporter
-        state: started
-        enabled: yes
-      when: ansible_distribution == "Ubuntu"
         
+    - name: Deploy Node Exporter with Docker Compose (Ubuntu)
+      raw: |
+        cd {{ monitoring_dir }}
+        docker compose -f docker-compose-node-exporter.yml up -d
+      become_user: "{{ ansible_user }}"
+      when: ansible_distribution == "Ubuntu"
+      
+    - name: Deploy Node Exporter with Docker run (Amazon Linux)
+      raw: |
+        docker run -d --name node-exporter \
+          --restart=unless-stopped \
+          --network host \
+          --pid host \
+          -v /proc:/host/proc:ro \
+          -v /sys:/host/sys:ro \
+          -v /:/rootfs:ro \
+          prom/node-exporter:v1.8.2 \
+          --path.procfs=/host/proc \
+          --path.sysfs=/host/sys \
+          --path.rootfs=/rootfs \
+          --collector.filesystem.mount-points-exclude="^/(sys|proc|dev|host|etc)($|/)" \
+          --web.listen-address=0.0.0.0:9100
+      become_user: "{{ ansible_user }}"
+      when: ansible_distribution == "Amazon"
+      
     - name: Wait for Node Exporter to be ready
       wait_for:
-        port: "{{ node_exporter_port }}"
+        port: 9100
         host: "{{ ansible_default_ipv4.address }}"
-        delay: 5
-        timeout: 30
+        delay: 10
+        timeout: 60
         
     - name: Display Node Exporter status
       debug:
-        msg: "✅ Node Exporter installed and running on {{ inventory_hostname }} - http://{{ ansible_host }}:{{ node_exporter_port }}/metrics"
+        msg: "✅ Node Exporter Docker container running on {{ inventory_hostname }} - http://{{ ansible_host }}:9100/metrics"

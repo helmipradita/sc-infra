@@ -21,7 +21,7 @@
         
     - name: Copy Promtail configuration
       copy:
-        src: "../../monitoring/promtail/"
+        src: "../../../monitoring/promtail/"
         dest: "{{ monitoring_dir }}/promtail/"
         owner: "{{ ansible_user }}"
         group: "{{ ansible_user }}"

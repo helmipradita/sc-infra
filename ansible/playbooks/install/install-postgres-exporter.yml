@@ -14,25 +14,6 @@
       meta: end_host
       when: not (install_postgres_exporter | default(false) | bool)
       
-    - name: Create postgres_exporter user
-      user:
-        name: "{{ postgres_exporter_user }}"
-        system: yes
-        shell: /bin/false
-        home: /var/lib/postgres_exporter
-        createhome: no
-        
-    - name: Create postgres_exporter directories
-      file:
-        path: "{{ item }}"
-        state: directory
-        owner: "{{ postgres_exporter_user }}"
-        group: "{{ postgres_exporter_user }}"
-        mode: '0755'
-      loop:
-        - /etc/postgres_exporter
-        - /var/lib/postgres_exporter
-        
     - name: Create monitoring directory
       file:
         path: "{{ monitoring_dir }}"
@@ -43,7 +24,7 @@
         
     - name: Copy PostgreSQL Exporter configuration
       copy:
-        src: "../../monitoring/postgres-exporter/"
+        src: "../../../monitoring/postgres_exporter/"
         dest: "{{ monitoring_dir }}/postgres-exporter/"
         owner: "{{ ansible_user }}"
         group: "{{ ansible_user }}"

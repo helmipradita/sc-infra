@@ -5,9 +5,6 @@
   gather_facts: yes
   vars:
     monitoring_dir: "/opt/monitoring"
-    node_exporter_version: "1.7.0"
-    node_exporter_user: "node_exporter"
-    node_exporter_port: 9100
     
   tasks:
     # =================================
@@ -46,80 +43,7 @@
         enabled: yes
       when: install_nginx | default(false) | bool
       
-    # =================================
-    # NODE EXPORTER INSTALLATION
-    # =================================
-    - name: Create node_exporter user
-      user:
-        name: "{{ node_exporter_user }}"
-        system: yes
-        shell: /bin/false
-        home: /var/lib/node_exporter
-        createhome: no
-      when: install_node_exporter | default(false) | bool
-        
-    - name: Create node_exporter directories
-      file:
-        path: "{{ item }}"
-        state: directory
-        owner: "{{ node_exporter_user }}"
-        group: "{{ node_exporter_user }}"
-        mode: '0755'
-      loop:
-        - /etc/node_exporter
-        - /var/lib/node_exporter
-      when: install_node_exporter | default(false) | bool
-        
-    - name: Download and install Node Exporter (Amazon Linux)
-      raw: |
-        cd /tmp
-        curl -LO https://github.com/prometheus/node_exporter/releases/download/v{{ node_exporter_version }}/node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz
-        tar -xvf node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz
-        sudo cp node_exporter-{{ node_exporter_version }}.linux-amd64/node_exporter /usr/local/bin/
-        sudo chown {{ node_exporter_user }}:{{ node_exporter_user }} /usr/local/bin/node_exporter
-        sudo chmod +x /usr/local/bin/node_exporter
-        rm -rf node_exporter-{{ node_exporter_version }}.linux-amd64*
-      when: ansible_distribution == "Amazon" and install_node_exporter | default(false) | bool
-      
-    - name: Install Node Exporter via package manager (Ubuntu)
-      apt:
-        name: prometheus-node-exporter
-        state: present
-      when: ansible_distribution == "Ubuntu" and install_node_exporter | default(false) | bool
-      
-    - name: Create systemd service file for Node Exporter (Amazon Linux)
-      copy:
-        content: |
-          [Unit]
-          Description=Node Exporter
-          Wants=network-online.target
-          After=network-online.target
 
-          [Service]
-          User={{ node_exporter_user }}
-          Group={{ node_exporter_user }}
-          Type=simple
-          ExecStart=/usr/local/bin/node_exporter \
-            --web.listen-address=:{{ node_exporter_port }} \
-            --path.procfs=/proc \
-            --path.sysfs=/sys \
-            --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)
-
-          [Install]
-          WantedBy=multi-user.target
-        dest: /etc/systemd/system/node_exporter.service
-        owner: root
-        group: root
-        mode: '0644'
-      when: ansible_distribution == "Amazon" and install_node_exporter | default(false) | bool
-      
-    - name: Start and enable Node Exporter
-      systemd:
-        daemon_reload: yes
-        name: node_exporter
-        state: started
-        enabled: yes
-      when: install_node_exporter | default(false) | bool
       
     # =================================
     # DOCKER-BASED SERVICES (Grafana, Prometheus, Loki, etc.)
@@ -185,13 +109,7 @@
         timeout: 60
       when: install_loki | default(false) | bool
       
-    - name: Wait for Node Exporter to be ready
-      wait_for:
-        port: "{{ node_exporter_port }}"
-        host: "{{ ansible_default_ipv4.address }}"
-        delay: 5
-        timeout: 30
-      when: install_node_exporter | default(false) | bool
+
       
     # =================================
     # DEPLOYMENT SUMMARY
@@ -210,7 +128,7 @@
           {% if install_prometheus | default(false) | bool %}   ✅ Prometheus (port 9090) - http://{{ ansible_host }}:9090{% endif %}
           {% if install_loki | default(false) | bool %}   ✅ Loki (port 3100) - http://{{ ansible_host }}:3100{% endif %}
           {% if install_promtail | default(false) | bool %}   ✅ Promtail{% endif %}
-          {% if install_node_exporter | default(false) | bool %}   ✅ Node Exporter (port {{ node_exporter_port }}) - http://{{ ansible_host }}:{{ node_exporter_port }}/metrics{% endif %}
+
           {% if install_postgres_exporter | default(false) | bool %}   ✅ PostgreSQL Exporter (port 9187){% endif %}
           
-          {% if not (install_nginx | default(false) | bool or install_grafana | default(false) | bool or install_prometheus | default(false) | bool or install_loki | default(false) | bool or install_promtail | default(false) | bool or install_node_exporter | default(false) | bool or install_postgres_exporter | default(false) | bool) %}   ℹ️  No services configured for installation on this host{% endif %}
+          {% if not (install_nginx | default(false) | bool or install_grafana | default(false) | bool or install_prometheus | default(false) | bool or install_loki | default(false) | bool or install_promtail | default(false) | bool or install_postgres_exporter | default(false) | bool) %}   ℹ️  No services configured for installation on this host{% endif %}
