@@ -21,7 +21,7 @@
         
     - name: Copy Prometheus configuration
       copy:
-        src: "../../monitoring/prometheus/"
+        src: "../../../monitoring/prometheus/"
         dest: "{{ monitoring_dir }}/prometheus/"
         owner: "{{ ansible_user }}"
         group: "{{ ansible_user }}"

@@ -21,7 +21,7 @@
         
     - name: Copy Grafana configuration
       copy:
-        src: "../../monitoring/grafana/"
+        src: "../../../monitoring/grafana/"
         dest: "{{ monitoring_dir }}/grafana/"
         owner: "{{ ansible_user }}"
         group: "{{ ansible_user }}"
