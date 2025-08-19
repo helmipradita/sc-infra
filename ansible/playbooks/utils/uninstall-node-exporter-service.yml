@@ -1,0 +1,64 @@
+---
+- name: Uninstall Node Exporter Service
+  hosts: all_servers
+  become: yes
+  gather_facts: yes
+  
+  tasks:
+    - name: Stop Node Exporter service (Amazon Linux)
+      systemd:
+        name: node_exporter
+        state: stopped
+        enabled: no
+      when: ansible_distribution == "Amazon"
+      ignore_errors: yes
+      
+    - name: Stop Node Exporter service (Ubuntu)
+      systemd:
+        name: prometheus-node-exporter
+        state: stopped
+        enabled: no
+      when: ansible_distribution == "Ubuntu"
+      ignore_errors: yes
+      
+    - name: Remove systemd service file (Amazon Linux)
+      file:
+        path: /etc/systemd/system/node_exporter.service
+        state: absent
+      when: ansible_distribution == "Amazon"
+      
+    - name: Remove Node Exporter binary (Amazon Linux)
+      file:
+        path: /usr/local/bin/node_exporter
+        state: absent
+      when: ansible_distribution == "Amazon"
+      
+    - name: Remove Node Exporter package (Ubuntu)
+      apt:
+        name: prometheus-node-exporter
+        state: absent
+        purge: yes
+      when: ansible_distribution == "Ubuntu"
+      
+    - name: Remove node_exporter user
+      user:
+        name: node_exporter
+        state: absent
+        remove: yes
+      ignore_errors: yes
+      
+    - name: Remove node_exporter directories
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/node_exporter
+        - /var/lib/node_exporter
+        
+    - name: Reload systemd daemon
+      systemd:
+        daemon_reload: yes
+        
+    - name: Display uninstall status
+      debug:
+        msg: "✅ Node Exporter service uninstalled from {{ inventory_hostname }}"

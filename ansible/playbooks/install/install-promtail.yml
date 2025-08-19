@@ -1,0 +1,73 @@
+---
+- name: Install Promtail
+  hosts: all_servers
+  become: yes
+  gather_facts: yes
+  vars:
+    monitoring_dir: "/opt/monitoring"
+    
+  tasks:
+    - name: Skip if promtail not requested
+      meta: end_host
+      when: not (install_promtail | default(false) | bool)
+      
+    - name: Create monitoring directory
+      file:
+        path: "{{ monitoring_dir }}"
+        state: directory
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: '0755'
+        
+    - name: Copy Promtail configuration
+      copy:
+        src: "../../monitoring/promtail/"
+        dest: "{{ monitoring_dir }}/promtail/"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: '0644'
+        
+    - name: Create Promtail Docker Compose file
+      copy:
+        content: |
+          version: '3.8'
+          
+          networks:
+            monitoring:
+              driver: bridge
+          
+          services:
+            promtail:
+              image: grafana/promtail:latest
+              container_name: promtail
+              volumes:
+                - /var/log:/var/log:ro
+                - /var/lib/docker/containers:/var/lib/docker/containers:ro
+                - ./promtail/promtail-config.yml:/etc/promtail/config.yml
+              command: -config.file=/etc/promtail/config.yml
+              restart: unless-stopped
+              networks:
+                - monitoring
+              depends_on:
+                - loki
+        dest: "{{ monitoring_dir }}/docker-compose-promtail.yml"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: '0644'
+        
+    - name: Deploy Promtail with Docker Compose
+      raw: |
+        cd {{ monitoring_dir }}
+        docker compose -f docker-compose-promtail.yml up -d
+      become_user: "{{ ansible_user }}"
+      
+    - name: Wait for Promtail to be ready
+      wait_for:
+        port: 9080
+        host: "{{ ansible_default_ipv4.address }}"
+        delay: 10
+        timeout: 60
+        
+    - name: Display Promtail status
+      debug:
+        msg: "✅ Promtail installed and running on {{ inventory_hostname }} - collecting logs for Loki"

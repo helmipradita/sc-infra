@@ -1,0 +1,77 @@
+---
+- name: Install Grafana
+  hosts: all_servers
+  become: yes
+  gather_facts: yes
+  vars:
+    monitoring_dir: "/opt/monitoring"
+    
+  tasks:
+    - name: Skip if grafana not requested
+      meta: end_host
+      when: not (install_grafana | default(false) | bool)
+      
+    - name: Create monitoring directory
+      file:
+        path: "{{ monitoring_dir }}"
+        state: directory
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: '0755'
+        
+    - name: Copy Grafana configuration
+      copy:
+        src: "../../monitoring/grafana/"
+        dest: "{{ monitoring_dir }}/grafana/"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: '0644'
+        
+    - name: Create Grafana Docker Compose file
+      copy:
+        content: |
+          version: '3.8'
+          
+          networks:
+            monitoring:
+              driver: bridge
+          
+          volumes:
+            grafana_data:
+          
+          services:
+            grafana:
+              image: grafana/grafana:11.3.0
+              container_name: grafana
+              network_mode: host
+              volumes:
+                - grafana_data:/var/lib/grafana
+                - ./grafana/provisioning:/etc/grafana/provisioning
+                - ./grafana/dashboards:/var/lib/grafana/dashboards
+              environment:
+                - GF_SECURITY_ADMIN_USER=admin
+                - GF_SECURITY_ADMIN_PASSWORD=admin123
+                - GF_USERS_ALLOW_SIGN_UP=false
+                - GF_SERVER_HTTP_PORT=3000
+              restart: unless-stopped
+        dest: "{{ monitoring_dir }}/docker-compose-grafana.yml"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: '0644'
+        
+    - name: Deploy Grafana with Docker Compose
+      raw: |
+        cd {{ monitoring_dir }}
+        docker compose -f docker-compose-grafana.yml up -d
+      become_user: "{{ ansible_user }}"
+      
+    - name: Wait for Grafana to be ready
+      wait_for:
+        port: 3000
+        host: "{{ ansible_default_ipv4.address }}"
+        delay: 10
+        timeout: 60
+        
+    - name: Display Grafana status
+      debug:
+        msg: "✅ Grafana installed and running on {{ inventory_hostname }} - http://{{ ansible_host }}:3000 (admin/admin123)"

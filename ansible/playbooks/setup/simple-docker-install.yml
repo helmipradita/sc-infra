@@ -1,6 +1,6 @@
 ---
 - name: Simple Docker Installation using Raw Commands
-  hosts: monitoring
+  hosts: all_servers
   gather_facts: no
   tasks:
     - name: Check current Docker status
@@ -34,41 +34,66 @@
       debug:
         var: docker_status.stdout_lines
 
-    - name: Install Docker on Ubuntu servers
+    - name: Install Docker stable version on Ubuntu servers
       raw: |
         if [ -f /etc/debian_version ]; then
-          echo "Installing Docker on Ubuntu..."
+          echo "Installing Docker stable version on Ubuntu..."
           sudo apt update
           sudo apt install -y apt-transport-https ca-certificates curl gnupg lsb-release
           curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
           echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
           sudo apt update
-          sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+          
+          # Install specific stable versions
+          echo "Installing Docker Engine v27.0.3 and Docker Compose v2.29.7..."
+          sudo apt install -y docker-ce=5:27.0.3* docker-ce-cli=5:27.0.3* containerd.io docker-buildx-plugin docker-compose-plugin=2.29.7*
+          
+          # Fallback to latest if specific version not available
+          if ! systemctl is-active --quiet docker; then
+            echo "Fallback: Installing latest available versions..."
+            sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+          fi
+          
           sudo systemctl start docker
           sudo systemctl enable docker
           sudo usermod -aG docker $USER
-          echo "✅ Docker installation completed on Ubuntu"
+          echo "✅ Docker stable installation completed on Ubuntu"
         else
           echo "⏭️ Skipping Ubuntu installation (not Ubuntu system)"
         fi
       when: ansible_connection == 'ssh'
       register: ubuntu_install
 
-    - name: Install Docker on Amazon Linux servers  
+    - name: Install Docker stable version on Amazon Linux servers
       raw: |
         if [ -f /etc/amazon-linux-release ] || grep -q "Amazon Linux" /etc/os-release 2>/dev/null; then
-          echo "Installing Docker on Amazon Linux..."
+          echo "Installing Docker stable version on Amazon Linux..."
           sudo yum update -y
-          sudo yum install -y docker
+          
+          # Try to install specific Docker version
+          echo "Attempting to install Docker Engine v27.0.3..."
+          sudo yum install -y docker-27.0.3* || {
+            echo "Fallback: Installing latest available Docker..."
+            sudo yum install -y docker
+          }
+          
           sudo systemctl start docker
           sudo systemctl enable docker
           sudo usermod -a -G docker $USER
           
-          # Install Docker Compose
-          sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64" -o /usr/local/bin/docker-compose
+          # Install Docker Compose stable version
+          echo "Installing Docker Compose v2.29.7..."
+          sudo curl -L "https://github.com/docker/compose/releases/download/v2.29.7/docker-compose-linux-x86_64" -o /usr/local/bin/docker-compose
+          
+          # Fallback to latest if specific version fails
+          if [ ! -f /usr/local/bin/docker-compose ] || [ ! -x /usr/local/bin/docker-compose ]; then
+            echo "Fallback: Installing latest Docker Compose..."
+            sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64" -o /usr/local/bin/docker-compose
+          fi
+          
           sudo chmod +x /usr/local/bin/docker-compose
           sudo ln -sf /usr/local/bin/docker-compose /usr/bin/docker-compose
-          echo "✅ Docker installation completed on Amazon Linux"
+          echo "✅ Docker stable installation completed on Amazon Linux"
         else
           echo "⏭️ Skipping Amazon Linux installation (not Amazon Linux system)"
         fi
@@ -91,7 +116,7 @@
         else
           echo "❌ Docker: Not available"
         fi
-        
+
         if command -v docker &> /dev/null && docker compose version &> /dev/null; then
           echo "✅ Docker Compose: $(docker compose version --short)"
         elif command -v docker-compose &> /dev/null; then
@@ -99,7 +124,7 @@
         else
           echo "❌ Docker Compose: Not available"
         fi
-        
+
         echo ""
         echo "Docker service status:"
         sudo systemctl is-active docker || echo "Docker service not running"
@@ -121,7 +146,7 @@
           ==============================
           ✅ Installation process completed on all servers
           ✅ Please run verification playbook to confirm installation
-          
+
           Next steps:
           1. Log out and log back in to apply docker group changes
           2. Test with: docker run hello-world

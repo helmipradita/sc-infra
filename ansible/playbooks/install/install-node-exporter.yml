@@ -1,0 +1,103 @@
+---
+- name: Install Node Exporter
+  hosts: all_servers
+  become: yes
+  gather_facts: yes
+  vars:
+    node_exporter_version: "1.7.0"
+    node_exporter_user: "node_exporter"
+    node_exporter_port: 9100
+    
+  tasks:
+    - name: Skip if node_exporter not requested
+      meta: end_host
+      when: not (install_node_exporter | default(false) | bool)
+      
+    - name: Create node_exporter user
+      user:
+        name: "{{ node_exporter_user }}"
+        system: yes
+        shell: /bin/false
+        home: /var/lib/node_exporter
+        createhome: no
+        
+    - name: Create node_exporter directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ node_exporter_user }}"
+        group: "{{ node_exporter_user }}"
+        mode: '0755'
+      loop:
+        - /etc/node_exporter
+        - /var/lib/node_exporter
+        
+    - name: Download and install Node Exporter (Amazon Linux)
+      raw: |
+        cd /tmp
+        curl -LO https://github.com/prometheus/node_exporter/releases/download/v{{ node_exporter_version }}/node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz
+        tar -xvf node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz
+        sudo cp node_exporter-{{ node_exporter_version }}.linux-amd64/node_exporter /usr/local/bin/
+        sudo chown {{ node_exporter_user }}:{{ node_exporter_user }} /usr/local/bin/node_exporter
+        sudo chmod +x /usr/local/bin/node_exporter
+        rm -rf node_exporter-{{ node_exporter_version }}.linux-amd64*
+      when: ansible_distribution == "Amazon"
+      
+    - name: Install Node Exporter via package manager (Ubuntu)
+      apt:
+        name: prometheus-node-exporter
+        state: present
+      when: ansible_distribution == "Ubuntu"
+      
+    - name: Create systemd service file for Node Exporter (Amazon Linux)
+      copy:
+        content: |
+          [Unit]
+          Description=Node Exporter
+          Wants=network-online.target
+          After=network-online.target
+
+          [Service]
+          User={{ node_exporter_user }}
+          Group={{ node_exporter_user }}
+          Type=simple
+          ExecStart=/usr/local/bin/node_exporter \
+            --web.listen-address=:{{ node_exporter_port }} \
+            --path.procfs=/proc \
+            --path.sysfs=/sys \
+            --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)
+
+          [Install]
+          WantedBy=multi-user.target
+        dest: /etc/systemd/system/node_exporter.service
+        owner: root
+        group: root
+        mode: '0644'
+      when: ansible_distribution == "Amazon"
+      
+    - name: Start and enable Node Exporter (Amazon Linux)
+      systemd:
+        daemon_reload: yes
+        name: node_exporter
+        state: started
+        enabled: yes
+      when: ansible_distribution == "Amazon"
+      
+    - name: Start and enable Node Exporter (Ubuntu)
+      systemd:
+        daemon_reload: yes
+        name: prometheus-node-exporter
+        state: started
+        enabled: yes
+      when: ansible_distribution == "Ubuntu"
+        
+    - name: Wait for Node Exporter to be ready
+      wait_for:
+        port: "{{ node_exporter_port }}"
+        host: "{{ ansible_default_ipv4.address }}"
+        delay: 5
+        timeout: 30
+        
+    - name: Display Node Exporter status
+      debug:
+        msg: "✅ Node Exporter installed and running on {{ inventory_hostname }} - http://{{ ansible_host }}:{{ node_exporter_port }}/metrics"

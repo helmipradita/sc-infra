@@ -1,0 +1,119 @@
+---
+- name: Install PostgreSQL Exporter
+  hosts: all_servers
+  become: yes
+  gather_facts: yes
+  vars:
+    monitoring_dir: "/opt/monitoring"
+    postgres_exporter_version: "0.15.0"
+    postgres_exporter_user: "postgres_exporter"
+    postgres_exporter_port: 9187
+    
+  tasks:
+    - name: Skip if postgres_exporter not requested
+      meta: end_host
+      when: not (install_postgres_exporter | default(false) | bool)
+      
+    - name: Create postgres_exporter user
+      user:
+        name: "{{ postgres_exporter_user }}"
+        system: yes
+        shell: /bin/false
+        home: /var/lib/postgres_exporter
+        createhome: no
+        
+    - name: Create postgres_exporter directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ postgres_exporter_user }}"
+        group: "{{ postgres_exporter_user }}"
+        mode: '0755'
+      loop:
+        - /etc/postgres_exporter
+        - /var/lib/postgres_exporter
+        
+    - name: Create monitoring directory
+      file:
+        path: "{{ monitoring_dir }}"
+        state: directory
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: '0755'
+        
+    - name: Copy PostgreSQL Exporter configuration
+      copy:
+        src: "../../monitoring/postgres-exporter/"
+        dest: "{{ monitoring_dir }}/postgres-exporter/"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: '0644'
+        
+    - name: Create PostgreSQL Exporter Docker Compose file
+      copy:
+        content: |
+          version: '3.8'
+          
+          networks:
+            monitoring:
+              driver: bridge
+          
+          services:
+            postgres-exporter:
+              image: prometheuscommunity/postgres-exporter:latest
+              container_name: postgres-exporter
+              ports:
+                - "{{ postgres_exporter_port }}:9187"
+              environment:
+                - DATA_SOURCE_NAME=postgresql://username:password@postgres:5432/database?sslmode=disable
+              restart: unless-stopped
+              networks:
+                - monitoring
+              depends_on:
+                - postgres
+                
+            postgres:
+              image: postgres:15
+              container_name: postgres
+              environment:
+                POSTGRES_DB: testdb
+                POSTGRES_USER: username
+                POSTGRES_PASSWORD: password
+              volumes:
+                - postgres_data:/var/lib/postgresql/data
+              ports:
+                - "5432:5432"
+              restart: unless-stopped
+              networks:
+                - monitoring
+                
+          volumes:
+            postgres_data:
+        dest: "{{ monitoring_dir }}/docker-compose-postgres-exporter.yml"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: '0644'
+        
+    - name: Deploy PostgreSQL Exporter with Docker Compose
+      raw: |
+        cd {{ monitoring_dir }}
+        docker compose -f docker-compose-postgres-exporter.yml up -d
+      become_user: "{{ ansible_user }}"
+      
+    - name: Wait for PostgreSQL to be ready
+      wait_for:
+        port: 5432
+        host: "{{ ansible_default_ipv4.address }}"
+        delay: 15
+        timeout: 60
+        
+    - name: Wait for PostgreSQL Exporter to be ready
+      wait_for:
+        port: "{{ postgres_exporter_port }}"
+        host: "{{ ansible_default_ipv4.address }}"
+        delay: 10
+        timeout: 60
+        
+    - name: Display PostgreSQL Exporter status
+      debug:
+        msg: "✅ PostgreSQL Exporter installed and running on {{ inventory_hostname }} - http://{{ ansible_host }}:{{ postgres_exporter_port }}/metrics"

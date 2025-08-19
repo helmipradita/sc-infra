@@ -1,0 +1,91 @@
+---
+- name: Deploy Full Monitoring Stack on Ubuntu Server
+  hosts: monitoring_server
+  become: yes
+  gather_facts: yes
+  vars:
+    monitoring_dir: "/opt/monitoring"
+    
+  tasks:
+    - name: Update package cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+      when: ansible_distribution == "Ubuntu"
+      
+    - name: Install Nginx
+      apt:
+        name: nginx
+        state: present
+      when: install_nginx | default(false)
+      
+    - name: Start and enable Nginx
+      systemd:
+        name: nginx
+        state: started
+        enabled: yes
+      when: install_nginx | default(false)
+      
+    - name: Create monitoring directory
+      file:
+        path: "{{ monitoring_dir }}"
+        state: directory
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: '0755'
+        
+    - name: Copy monitoring stack configuration
+      copy:
+        src: "../../monitoring/"
+        dest: "{{ monitoring_dir }}/"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: '0644'
+        
+    - name: Create Prometheus configuration
+      template:
+        src: prometheus.yml.j2
+        dest: "{{ monitoring_dir }}/prometheus/prometheus.yml"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: '0644'
+      when: install_prometheus | default(false)
+      
+    - name: Deploy monitoring stack with Docker Compose
+      raw: |
+        cd {{ monitoring_dir }}
+        docker compose up -d
+      become_user: "{{ ansible_user }}"
+      when: install_grafana | default(false) or install_prometheus | default(false)
+      
+    - name: Wait for services to be ready
+      wait_for:
+        port: "{{ item }}"
+        host: "{{ ansible_default_ipv4.address }}"
+        delay: 10
+        timeout: 60
+      loop:
+        - 3000  # Grafana
+        - 9090  # Prometheus  
+        - 3100  # Loki
+      when: install_grafana | default(false)
+      
+    - name: Display service URLs
+      debug:
+        msg: |
+          🎉 MONITORING STACK DEPLOYED SUCCESSFULLY!
+          =========================================
+          
+          📊 Access URLs:
+          - Grafana: http://{{ ansible_default_ipv4.address }}:3000 (admin/admin123)
+          - Prometheus: http://{{ ansible_default_ipv4.address }}:9090
+          - Loki: http://{{ ansible_default_ipv4.address }}:3100
+          
+          📋 Services Status:
+          {% if install_nginx %}✅ Nginx: Running{% endif %}
+          {% if install_grafana %}✅ Grafana: Running{% endif %}
+          {% if install_prometheus %}✅ Prometheus: Running{% endif %}
+          {% if install_loki %}✅ Loki: Running{% endif %}
+          {% if install_promtail %}✅ Promtail: Running{% endif %}
+          {% if install_node_exporter %}✅ Node Exporter: Running{% endif %}
+          {% if install_postgres_exporter %}✅ PostgreSQL Exporter: Running{% endif %}

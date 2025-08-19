@@ -1,58 +1,210 @@
-# AWS SSH Keys
+# =============================================================================
+# SC-INFRA GITIGNORE - COMPREHENSIVE & ORGANIZED
+# =============================================================================
+
+# =================================
+# SECURITY & SENSITIVE FILES
+# =================================
+# SSH Keys & Certificates
 ansible/keys/*.pem
 ansible/keys/*.key
+ansible/keys/*.ppk
+ansible/keys/id_*
+*.crt
+*.cert
+*.p12
+*.pfx
 
-# Ansible temporary files
-*.retry
-.ansible/
-
-# Environment variables
+# Environment variables & secrets
 .env
 .env.local
 .env.*.local
+.envrc
+secrets/
+vault_pass.txt
+ansible-vault-password
+.vault_pass
 
-# Docker volumes and data
-monitoring/data/
+# API Keys & Tokens
+api-keys.txt
+*.token
+*.secret
+
+# =================================
+# ANSIBLE SPECIFIC
+# =================================
+# Ansible temporary files
+*.retry
+.ansible/
+ansible.log
+ansible/*.log
+
+# Dynamic inventory files
+ansible/inventories/dynamic_*
+ansible/inventories/temp_*
+ansible/inventories/*_backup.ini
+
+# Ansible collections cache
+~/.ansible/
+collections/
+
+# =================================
+# DOCKER & MONITORING DATA
+# =================================
+# Persistent volumes
+monitoring/*/data/
 monitoring/volumes/
+**/data/
+**/volumes/
 
-# Grafana data
+# Docker compose overrides
+docker-compose.override.yml
+docker-compose.prod.yml
+docker-compose.local.yml
+
+# Container logs
+container-logs/
+
+# =================================
+# SERVICE SPECIFIC DATA
+# =================================
+# Grafana
 monitoring/grafana/data/
+monitoring/grafana/logs/
+monitoring/grafana/plugins/
+grafana.db
 
-# Prometheus data
+# Prometheus
 monitoring/prometheus/data/
+monitoring/prometheus/wal/
+prometheus.yml.backup
 
-# Loki data
+# Loki
 monitoring/loki/data/
+monitoring/loki/index/
+monitoring/loki/chunks/
 
-# Log files
+# Node Exporter
+monitoring/node_exporter/textfile_collector/
+
+# =================================
+# LOGS & TEMPORARY FILES
+# =================================
+# Application logs
 *.log
+*.log.*
 logs/
+log/
+*.out
 
 # Temporary files
 *.tmp
 *.temp
-.DS_Store
-Thumbs.db
+*.cache
+.cache/
+tmp/
+temp/
 
-# IDE files
+# =================================
+# OPERATING SYSTEM
+# =================================
+# macOS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Icon?
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+
+# =================================
+# DEVELOPMENT TOOLS
+# =================================
+# IDEs
 .vscode/
 .idea/
+*.sublime-*
+.atom/
+
+# Vim
 *.swp
 *.swo
 *~
+.vim/
 
-# Backup files
+# Emacs
+*~
+\#*\#
+.\#*
+
+# =================================
+# BACKUP & ARCHIVE FILES
+# =================================
 *.bak
 *.backup
+*.old
+*.orig
+*.save
+*.tar.gz
+*.zip
+*.rar
 
-# Ansible vault files (if using encryption)
-vault_pass.txt
+# =================================
+# NODE.JS (if using any JS tools)
+# =================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+.yarn/
 
-# Host-specific inventory files (if you create them)
-ansible/inventory_*.ini
+# =================================
+# PYTHON (if using Python scripts)
+# =================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
 
-# SSL certificates
-*.crt
-*.cert
-*.key
-*.pem
+# =================================
+# DOCUMENTATION BUILD
+# =================================
+docs/_build/
+docs/build/
+site/
+
+# =================================
+# CUSTOM PROJECT EXCLUDES
+# =================================
+# Local testing files
+test-*
+testing/
+sandbox/
+
+# Personal notes
+NOTES.md
+TODO.md
+notes/
+
+# Local configuration overrides
+*local.yml
+*local.ini
+local_*

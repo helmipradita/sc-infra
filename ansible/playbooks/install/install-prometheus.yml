@@ -1,0 +1,79 @@
+---
+- name: Install Prometheus
+  hosts: all_servers
+  become: yes
+  gather_facts: yes
+  vars:
+    monitoring_dir: "/opt/monitoring"
+    
+  tasks:
+    - name: Skip if prometheus not requested
+      meta: end_host
+      when: not (install_prometheus | default(false) | bool)
+      
+    - name: Create monitoring directory
+      file:
+        path: "{{ monitoring_dir }}"
+        state: directory
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: '0755'
+        
+    - name: Copy Prometheus configuration
+      copy:
+        src: "../../monitoring/prometheus/"
+        dest: "{{ monitoring_dir }}/prometheus/"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: '0644'
+        
+    - name: Create Prometheus Docker Compose file
+      copy:
+        content: |
+          version: '3.8'
+          
+          networks:
+            monitoring:
+              driver: bridge
+          
+          volumes:
+            prometheus_data:
+          
+          services:
+            prometheus:
+              image: prom/prometheus:v2.53.1
+              container_name: prometheus
+              network_mode: host
+              volumes:
+                - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+                - prometheus_data:/prometheus
+              command:
+                - '--config.file=/etc/prometheus/prometheus.yml'
+                - '--storage.tsdb.path=/prometheus'
+                - '--web.console.libraries=/etc/prometheus/console_libraries'
+                - '--web.console.templates=/etc/prometheus/consoles'
+                - '--storage.tsdb.retention.time=200h'
+                - '--web.enable-lifecycle'
+                - '--web.listen-address=0.0.0.0:9090'
+              restart: unless-stopped
+        dest: "{{ monitoring_dir }}/docker-compose-prometheus.yml"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: '0644'
+        
+    - name: Deploy Prometheus with Docker Compose
+      raw: |
+        cd {{ monitoring_dir }}
+        docker compose -f docker-compose-prometheus.yml up -d
+      become_user: "{{ ansible_user }}"
+      
+    - name: Wait for Prometheus to be ready
+      wait_for:
+        port: 9090
+        host: "{{ ansible_default_ipv4.address }}"
+        delay: 10
+        timeout: 60
+        
+    - name: Display Prometheus status
+      debug:
+        msg: "✅ Prometheus installed and running on {{ inventory_hostname }} - http://{{ ansible_host }}:9090"

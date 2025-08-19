@@ -1,0 +1,70 @@
+---
+- name: Install and Configure Nginx
+  hosts: all_servers
+  become: yes
+  gather_facts: yes
+  
+  tasks:
+    - name: Debug install_nginx variable
+      debug:
+        msg: "install_nginx value for {{ inventory_hostname }}: {{ install_nginx | default('not set') }}"
+    
+    - name: Skip if nginx not requested
+      meta: end_host
+      when: not (install_nginx | default(false) | bool)
+      
+    - name: Update package cache (Ubuntu)
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+      when: ansible_distribution == "Ubuntu"
+      
+    - name: Update package cache (Amazon Linux)
+      yum:
+        update_cache: yes
+      when: ansible_distribution == "Amazon"
+      
+    - name: Install Nginx stable version (Ubuntu)
+      apt:
+        name: nginx=1.28.0*
+        state: present
+        allow_downgrade: yes
+      when: ansible_distribution == "Ubuntu"
+      ignore_errors: yes
+      
+    - name: Install Nginx latest available (Ubuntu fallback)
+      apt:
+        name: nginx
+        state: present
+      when: ansible_distribution == "Ubuntu"
+      
+    - name: Install Nginx stable version (Amazon Linux)
+      yum:
+        name: nginx-1.28.0*
+        state: present
+        allow_downgrade: yes
+      when: ansible_distribution == "Amazon"
+      ignore_errors: yes
+      
+    - name: Install Nginx latest available (Amazon Linux fallback)
+      yum:
+        name: nginx
+        state: present
+      when: ansible_distribution == "Amazon"
+      
+    - name: Start and enable Nginx
+      systemd:
+        name: nginx
+        state: started
+        enabled: yes
+        
+    - name: Wait for Nginx to be ready
+      wait_for:
+        port: 80
+        host: "{{ ansible_default_ipv4.address }}"
+        delay: 2
+        timeout: 30
+        
+    - name: Display Nginx status
+      debug:
+        msg: "✅ Nginx installed and running on {{ inventory_hostname }} - http://{{ ansible_host }}"

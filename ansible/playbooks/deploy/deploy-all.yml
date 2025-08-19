@@ -1,0 +1,38 @@
+---
+- name: Deploy All Services - Master Orchestrator
+  hosts: all_servers  
+  become: yes
+  gather_facts: yes
+  
+  tasks:
+    - name: Display deployment start message
+      debug:
+        msg: "🚀 Starting deployment of all requested services on {{ inventory_hostname }}"
+        
+    - name: Show services to be deployed
+      debug:
+        msg: |
+          Services requested for {{ inventory_hostname }}:
+          - Nginx: {{ install_nginx | default(false) }}
+          - Grafana: {{ install_grafana | default(false) }}
+          - Prometheus: {{ install_prometheus | default(false) }}
+          - Loki: {{ install_loki | default(false) }}
+          - Promtail: {{ install_promtail | default(false) }}
+          - Node Exporter: {{ install_node_exporter | default(false) }}
+          - PostgreSQL Exporter: {{ install_postgres_exporter | default(false) }}
+
+- import_playbook: install-nginx.yml
+- import_playbook: install-node-exporter.yml
+- import_playbook: install-prometheus.yml
+- import_playbook: install-grafana.yml
+- import_playbook: install-loki.yml
+- import_playbook: install-promtail.yml
+- import_playbook: install-postgres-exporter.yml
+
+- name: Deployment Summary
+  hosts: all_servers
+  gather_facts: no
+  tasks:
+    - name: Display deployment completion
+      debug:
+        msg: "✅ All requested services have been deployed on {{ inventory_hostname }}"

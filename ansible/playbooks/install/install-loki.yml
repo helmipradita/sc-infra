@@ -1,0 +1,75 @@
+---
+- name: Install Loki
+  hosts: all_servers
+  become: yes
+  gather_facts: yes
+  vars:
+    monitoring_dir: "/opt/monitoring"
+    
+  tasks:
+    - name: Skip if loki not requested
+      meta: end_host
+      when: not (install_loki | default(false) | bool)
+      
+    - name: Create monitoring directory
+      file:
+        path: "{{ monitoring_dir }}"
+        state: directory
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: '0755'
+        
+    - name: Copy Loki configuration
+      copy:
+        src: "../../monitoring/loki/"
+        dest: "{{ monitoring_dir }}/loki/"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: '0644'
+        
+    - name: Create Loki Docker Compose file
+      copy:
+        content: |
+          version: '3.8'
+          
+          networks:
+            monitoring:
+              driver: bridge
+          
+          volumes:
+            loki_data:
+          
+          services:
+            loki:
+              image: grafana/loki:latest
+              container_name: loki
+              ports:
+                - "3100:3100"
+              volumes:
+                - loki_data:/loki
+                - ./loki/loki-config.yml:/etc/loki/local-config.yaml
+              command: -config.file=/etc/loki/local-config.yaml
+              restart: unless-stopped
+              networks:
+                - monitoring
+        dest: "{{ monitoring_dir }}/docker-compose-loki.yml"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: '0644'
+        
+    - name: Deploy Loki with Docker Compose
+      raw: |
+        cd {{ monitoring_dir }}
+        docker compose -f docker-compose-loki.yml up -d
+      become_user: "{{ ansible_user }}"
+      
+    - name: Wait for Loki to be ready
+      wait_for:
+        port: 3100
+        host: "{{ ansible_default_ipv4.address }}"
+        delay: 10
+        timeout: 60
+        
+    - name: Display Loki status
+      debug:
+        msg: "✅ Loki installed and running on {{ inventory_hostname }} - http://{{ ansible_host }}:3100"
