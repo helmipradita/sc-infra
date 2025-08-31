@@ -97,31 +97,55 @@ ansible -i ansible/inventory.ini new-ubuntu -m ping
 
 ## 🔧 Troubleshooting
 
-### Connection Failed
+### SSH Connection Issues
 ```bash
-# Check SSH key permissions
-chmod 600 ansible/keys/*.pem
+# Common SSH errors and quick fixes
 
-# Test manual SSH
+# Error: "Load key: invalid format"
+ssh-keygen -p -f ansible/keys/key-file.pem -m PEM -N ""
+
+# Error: "Permission denied (publickey)"
+chmod 600 ansible/keys/*.pem  # Fix permissions
+ansible-inventory -i ansible/inventories/inventory.ini --host server-name  # Check config
+
+# Test manual SSH connection
 ssh -i ansible/keys/key-name.pem ubuntu@IP
+
+# Extract public key from private key (to add to server)
+ssh-keygen -y -f ansible/keys/key-name.pem
 ```
 
 ### Service Not Starting
 ```bash
 # Check Docker status
-ansible -i ansible/inventory.ini server-name -m raw -a "docker ps"
+ansible -i ansible/inventories/inventory.ini server-name -m raw -a "docker ps"
 
 # Check service logs
-ansible -i ansible/inventory.ini server-name -m raw -a "docker logs container-name"
+ansible -i ansible/inventories/inventory.ini server-name -m raw -a "docker logs container-name"
 ```
 
 ### Variables Not Working
 ```bash
 # Debug specific host variables
-ansible-inventory -i ansible/inventory.ini --host server-name
+ansible-inventory -i ansible/inventories/inventory.ini --host server-name
 
 # Test specific variable
-ansible -i ansible/inventory.ini server-name -m debug -a "var=install_nginx"
+ansible -i ansible/inventories/inventory.ini server-name -m debug -a "var=install_nginx"
+```
+
+### SSH Key Setup for New Server
+```bash
+# For servers created without default key pair:
+
+# Method 1: Generate custom key (PEM format)
+ssh-keygen -t rsa -b 4096 -f ~/.ssh/custom-key -N "" -m PEM
+
+# Method 2: Use existing key (recommended)
+ssh-keygen -y -f ansible/keys/aws-cloudhelmipradita.pem
+# Copy output to server's ~/.ssh/authorized_keys
+
+# Method 3: Access via AWS Console Browser
+# AWS Console → EC2 → Instance → Connect → EC2 Instance Connect
 ```
 
 ## 📁 File Structure

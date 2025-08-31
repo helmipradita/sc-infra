@@ -18,6 +18,13 @@ Welcome to the SC-Infra documentation! This directory contains guides for managi
 - Emergency troubleshooting commands
 - **Use this for daily operations**
 
+### 3. [SSH-KEY-MANAGEMENT.md](./SSH-KEY-MANAGEMENT.md)
+**Complete SSH key troubleshooting guide**
+- SSH key format issues and solutions
+- Step-by-step key setup for new servers
+- Common connection problems troubleshooting
+- **Essential for server connectivity issues**
+
 ## 🚀 Getting Started
 
 ### First Time Setup
@@ -57,10 +64,11 @@ sc-infra/
 
 ## 🆘 Need Help?
 
-1. **Can't connect to server?** → Check INVENTORY-GUIDE.md troubleshooting section
-2. **Service not installing?** → Check QUICK-REFERENCE.md troubleshooting section
-3. **Adding new server type?** → See examples in INVENTORY-GUIDE.md
-4. **Forgot a command?** → Check QUICK-REFERENCE.md for common commands
+1. **Can't connect to server?** → Check [SSH-KEY-MANAGEMENT.md](./SSH-KEY-MANAGEMENT.md) for connectivity issues
+2. **SSH key format errors?** → See [SSH-KEY-MANAGEMENT.md](./SSH-KEY-MANAGEMENT.md) troubleshooting section
+3. **Service not installing?** → Check [QUICK-REFERENCE.md](./QUICK-REFERENCE.md) troubleshooting section
+4. **Adding new server type?** → See examples in [INVENTORY-GUIDE.md](./INVENTORY-GUIDE.md)
+5. **Forgot a command?** → Check [QUICK-REFERENCE.md](./QUICK-REFERENCE.md) for common commands
 
 ## 🔄 Quick Commands
 

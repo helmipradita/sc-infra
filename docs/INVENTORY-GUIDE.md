@@ -66,7 +66,16 @@ server-name ansible_host=IP ansible_user=ec2-user key_file=key-name.pem
 
 All SSH keys should be placed in: `ansible/keys/`
 
-Default key: `aws-cloudhelmipradita.pem`
+**Current Keys:**
+- `aws-cloudhelmipradita.pem` - Main AWS key (PEM format) ✅ Working
+- `monitoring-v2-clone2-custom.pem` - Custom generated key (PEM format) ✅ Working
+
+**⚠️ SSH Key Format Requirements:**
+- Must be **PEM format**: `-----BEGIN RSA PRIVATE KEY-----`
+- **NOT** OpenSSH format: `-----BEGIN OPENSSH PRIVATE KEY-----`
+- Generate with: `ssh-keygen -t rsa -b 4096 -f keyname -N "" -m PEM`
+
+**📋 For detailed SSH key troubleshooting, see [SSH-KEY-MANAGEMENT.md](./SSH-KEY-MANAGEMENT.md)**
 
 ## 🔧 Examples
 
